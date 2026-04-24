@@ -25,10 +25,15 @@ actual object FileSystem {
     actual fun copyFile(src: String, dest: String): Boolean = runCatching {
         File(src).copyTo(File(dest).also { it.parentFile?.mkdirs() }, overwrite = true)
     }.isSuccess
+    actual fun fileModifiedAt(path: String): Long = File(path).lastModified()
 }
 
 actual fun newId()             = UUID.randomUUID().toString().substring(0, 8)
 actual fun currentTimeMillis() = System.currentTimeMillis()
+actual fun localTimeString(): String {
+    val t = java.time.LocalTime.now()
+    return "%02d:%02d".format(t.hour, t.minute)
+}
 
 actual fun loadImageBitmap(path: String): ImageBitmap? =
     runCatching { ImageIO.read(File(path))?.toComposeImageBitmap() }.getOrNull()

@@ -14,10 +14,12 @@ expect object FileSystem {
     fun fileName(path: String): String
     fun join(vararg parts: String): String
     fun copyFile(src: String, dest: String): Boolean
+    fun fileModifiedAt(path: String): Long
 }
 
 expect fun newId(): String
 expect fun currentTimeMillis(): Long
+expect fun localTimeString(): String   // "HH:mm" 로컬 시각
 expect fun loadImageBitmap(path: String): ImageBitmap?
 expect fun pickFile(title: String, vararg extensions: String): String?
 expect fun pickFiles(title: String): List<String>

@@ -60,7 +60,7 @@ fun parseMarkdown(input: String): List<MdBlock> {
             while (i < lines.size && !lines[i].trimStart().startsWith("```")) { code.add(lines[i]); i++ }
             blocks.add(MdBlock.Code(code.joinToString("\n"), lang)); i++; continue
         }
-        if (line.trim().matches(Regex("^(---|\\*\\*\\*|___)\\s*$"))) { blocks.add(MdBlock.Rule); i++; continue }
+        if (line.trim().matches(Regex("^(-{3,}|\\*{3,}|_{3,})\\s*$"))) { blocks.add(MdBlock.Rule); i++; continue }
         val hMatch = Regex("^(#{1,6})\\s+(.*)").find(line)
         if (hMatch != null) { blocks.add(MdBlock.Heading(hMatch.groupValues[1].length, parseInlines(hMatch.groupValues[2]))); i++; continue }
         if (line.startsWith(">")) {
@@ -82,7 +82,7 @@ fun parseMarkdown(input: String): List<MdBlock> {
         val para = mutableListOf<String>()
         while (i < lines.size) {
             val l = lines[i]
-            if (l.isBlank() || l.trimStart().startsWith("```") || l.trim().matches(Regex("^(---|\\*\\*\\*|___)\\s*$"))
+            if (l.isBlank() || l.trimStart().startsWith("```") || l.trim().matches(Regex("^(-{3,}|\\*{3,}|_{3,})\\s*$"))
                 || l.matches(Regex("^#{1,6}\\s+.*")) || l.startsWith(">")
                 || l.matches(Regex("^[\\-\\*\\+]\\s+.*")) || l.matches(Regex("^\\d+\\.\\s+.*"))
                 || Regex("^!\\[(.*)\\]\\((.+)\\)\\s*$").matches(l)) break
@@ -99,8 +99,11 @@ fun parseInlines(text: String): List<MdInline> {
     while (remaining.isNotEmpty()) {
         val candidates = listOfNotNull(
             Regex("\\*\\*\\*(.+?)\\*\\*\\*").find(remaining)?.let { Triple(it.range.first, "bi", it) },
+            Regex("(?<![a-zA-Z0-9])___(.+?)___(?![a-zA-Z0-9_])").find(remaining)?.let { Triple(it.range.first, "bi", it) },
             Regex("\\*\\*(.+?)\\*\\*").find(remaining)?.let { Triple(it.range.first, "b", it) },
+            Regex("(?<![a-zA-Z0-9])__(.+?)__(?![a-zA-Z0-9_])").find(remaining)?.let { Triple(it.range.first, "b", it) },
             Regex("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)").find(remaining)?.let { Triple(it.range.first, "i", it) },
+            Regex("(?<![a-zA-Z0-9_])_(?!_)(.+?)_(?![a-zA-Z0-9_])").find(remaining)?.let { Triple(it.range.first, "i", it) },
             Regex("~~(.+?)~~").find(remaining)?.let { Triple(it.range.first, "s", it) },
             Regex("`(.+?)`").find(remaining)?.let { Triple(it.range.first, "c", it) },
             Regex("\\[(.+?)]\\((.+?)\\)").find(remaining)?.let { Triple(it.range.first, "l", it) },
@@ -138,9 +141,12 @@ fun List<MdInline>.toAnnotatedString(codeBg: androidx.compose.ui.graphics.Color,
 
 @Composable
 fun MarkdownViewer(text: String, notesDir: String = "", modifier: Modifier = Modifier) {
-    val colorScheme = MaterialTheme.colorScheme
-    val codeBg = colorScheme.surfaceVariant
-    val linkColor = colorScheme.primary
+    val cs = MaterialTheme.colorScheme
+    // 코드 블록 배경: surfaceVariant에서 onSurface 텍스트 색을 명시해 다크/라이트 모두 가독성 보장
+    val codeBg = cs.surfaceVariant
+    val codeTextColor = cs.onSurface
+    val linkColor = cs.primary
+    val textColor = cs.onBackground
     val blocks = remember(text) { parseMarkdown(text) }
 
     Column(
@@ -151,45 +157,104 @@ fun MarkdownViewer(text: String, notesDir: String = "", modifier: Modifier = Mod
             when (block) {
                 is MdBlock.Heading -> {
                     val (sz, fw) = when (block.level) {
-                        1 -> 26.sp to FontWeight.Bold; 2 -> 20.sp to FontWeight.Bold
-                        3 -> 17.sp to FontWeight.SemiBold; else -> 15.sp to FontWeight.Medium
+                        1    -> 26.sp to FontWeight.Bold
+                        2    -> 20.sp to FontWeight.Bold
+                        3    -> 17.sp to FontWeight.SemiBold
+                        else -> 15.sp to FontWeight.Medium
                     }
-                    Text(block.inlines.toAnnotatedString(codeBg, linkColor), fontSize = sz, fontWeight = fw,
-                        modifier = Modifier.padding(top = if (block.level <= 2) 10.dp else 4.dp))
+                    Text(
+                        block.inlines.toAnnotatedString(codeBg, linkColor),
+                        fontSize = sz,
+                        fontWeight = fw,
+                        color = textColor,
+                        modifier = Modifier.padding(top = if (block.level <= 2) 10.dp else 4.dp)
+                    )
                 }
                 is MdBlock.Paragraph ->
-                    Text(block.inlines.toAnnotatedString(codeBg, linkColor), lineHeight = 22.sp)
-                is MdBlock.Code -> Surface(shape = RoundedCornerShape(8.dp), color = codeBg, modifier = Modifier.fillMaxWidth()) {
-                    Text(block.code, fontFamily = FontFamily.Monospace, fontSize = 13.sp,
-                        modifier = Modifier.horizontalScroll(rememberScrollState()).padding(12.dp))
+                    Text(
+                        block.inlines.toAnnotatedString(codeBg, linkColor),
+                        lineHeight = 24.sp,
+                        color = textColor
+                    )
+                is MdBlock.Code -> Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = codeBg,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        block.code,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        color = codeTextColor,   // Surface가 설정하는 contentColor 대신 명시
+                        lineHeight = 20.sp,
+                        modifier = Modifier.horizontalScroll(rememberScrollState()).padding(14.dp)
+                    )
                 }
-                is MdBlock.BulletList -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    block.items.forEach { Row { Text("• ", fontWeight = FontWeight.Bold); Text(it.toAnnotatedString(codeBg, linkColor), lineHeight = 22.sp) } }
+                is MdBlock.BulletList -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    block.items.forEach { item ->
+                        Row {
+                            Text("•  ", fontWeight = FontWeight.Bold, color = cs.primary)
+                            Text(item.toAnnotatedString(codeBg, linkColor), lineHeight = 22.sp, color = textColor)
+                        }
+                    }
                 }
-                is MdBlock.OrderedList -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    block.items.forEachIndexed { idx, it -> Row { Text("${idx+1}. ", fontWeight = FontWeight.Bold); Text(it.toAnnotatedString(codeBg, linkColor), lineHeight = 22.sp) } }
+                is MdBlock.OrderedList -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    block.items.forEachIndexed { idx, item ->
+                        Row {
+                            Text("${idx + 1}.  ", fontWeight = FontWeight.Bold, color = cs.primary)
+                            Text(item.toAnnotatedString(codeBg, linkColor), lineHeight = 22.sp, color = textColor)
+                        }
+                    }
                 }
-                is MdBlock.Blockquote -> Row {
-                    Box(Modifier.width(3.dp).height(IntrinsicSize.Min).background(colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(2.dp)))
-                    Spacer(Modifier.width(10.dp))
-                    Text(block.inlines.toAnnotatedString(codeBg, linkColor), color = colorScheme.onSurfaceVariant, fontStyle = FontStyle.Italic, lineHeight = 22.sp)
+                is MdBlock.Blockquote -> Surface(
+                    shape = RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp),
+                    color = cs.primaryContainer.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(vertical = 8.dp)) {
+                        Box(
+                            Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .background(cs.primary, RoundedCornerShape(2.dp))
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            block.inlines.toAnnotatedString(codeBg, linkColor),
+                            color = textColor.copy(alpha = 0.8f),
+                            fontStyle = FontStyle.Italic,
+                            lineHeight = 22.sp,
+                            modifier = Modifier.padding(end = 12.dp, top = 2.dp, bottom = 2.dp)
+                        )
+                    }
                 }
                 is MdBlock.ImageBlock -> {
                     val absPath = remember(block.src, notesDir) {
                         if (block.src.startsWith("/")) block.src
                         else FileSystem.join(notesDir, block.src)
                     }
-                    val bitmap = remember(absPath) { loadImageBitmap(absPath) }
-                    if (bitmap != null) {
-                        Image(bitmap = bitmap, contentDescription = block.alt,
+                    var bitmap by remember(absPath) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+                    LaunchedEffect(absPath) { bitmap = loadImageBitmap(absPath) }
+                    val bmp = bitmap
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp,
+                            contentDescription = block.alt,
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.FillWidth)
+                            contentScale = ContentScale.FillWidth
+                        )
                     } else {
-                        Text("🖼 ${block.alt.ifEmpty { block.src.substringAfterLast("/") }}", color = colorScheme.primary)
+                        Text(
+                            "🖼  ${block.alt.ifEmpty { block.src.substringAfterLast("/") }}",
+                            color = cs.primary
+                        )
                     }
                 }
-                is MdBlock.Rule -> HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = colorScheme.outlineVariant)
-                is MdBlock.BlankLine -> Spacer(Modifier.height(6.dp))
+                is MdBlock.Rule -> HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = cs.outlineVariant
+                )
+                is MdBlock.BlankLine -> Spacer(Modifier.height(8.dp))
             }
         }
     }

@@ -13,5 +13,6 @@ data class MemoNote(
     val content: String,
     val folderId: String?,
     val modifiedAt: Long,
-    val useMarkdown: Boolean = false
+    val useMarkdown: Boolean = false,
+    val pinned: Boolean = false
 )

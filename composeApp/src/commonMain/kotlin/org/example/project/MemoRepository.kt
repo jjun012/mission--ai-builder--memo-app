@@ -28,7 +28,7 @@ class MemoRepository {
             val name = FileSystem.readText(FileSystem.join(path, ".name")) ?: return@mapNotNull null
             val cover = FileSystem.readText(FileSystem.join(path, ".cover"))?.trim()?.takeIf { FileSystem.exists(it) }
             MemoFolder(id, name.trim(), parentId, cover)
-        }
+        }.sortedBy { it.name.lowercase() }
     }
 
     fun createFolder(name: String, parentId: String?): MemoFolder {
@@ -76,8 +76,21 @@ class MemoRepository {
         FileSystem.createDirs(notesDirFor(note.folderId))
         FileSystem.writeText(
             notePath(note.id, note.folderId),
-            "${note.title}\nmarkdown:${note.useMarkdown}\n\n${note.content}"
+            "${note.title}\nmarkdown:${note.useMarkdown}\npinned:${note.pinned}\n\n${note.content}"
         )
+    }
+
+    fun togglePin(noteId: String, folderId: String?) {
+        val note = loadNote(noteId, folderId)
+        saveNote(note.copy(pinned = !note.pinned))
+    }
+
+    fun duplicateNote(noteId: String, folderId: String?): MemoNote {
+        val src = loadNote(noteId, folderId)
+        val newId = newId()
+        val copy = src.copy(id = newId, title = "${src.title} (복사본)", pinned = false)
+        saveNote(copy)
+        return copy
     }
 
     fun deleteNote(id: String, folderId: String?) = FileSystem.delete(notePath(id, folderId))
@@ -153,16 +166,19 @@ class MemoRepository {
         val raw = FileSystem.readText(path) ?: ""
         val lines = raw.lines()
         val title = lines.getOrNull(0)?.trim()?.ifBlank { "제목 없음" } ?: "제목 없음"
-        val useMarkdown: Boolean
-        val contentStart: Int
+        var useMarkdown = false
+        var pinned = false
+        var contentStart = 2
         if (lines.size > 1 && lines[1].startsWith("markdown:")) {
             useMarkdown = lines[1].removePrefix("markdown:").trim() == "true"
-            contentStart = 3
-        } else {
-            useMarkdown = false
-            contentStart = 2
+            if (lines.size > 2 && lines[2].startsWith("pinned:")) {
+                pinned = lines[2].removePrefix("pinned:").trim() == "true"
+                contentStart = 4
+            } else {
+                contentStart = 3
+            }
         }
         val content = if (lines.size > contentStart) lines.drop(contentStart).joinToString("\n") else ""
-        return MemoNote(id, title, content, folderId, 0L, useMarkdown)
+        return MemoNote(id, title, content, folderId, FileSystem.fileModifiedAt(path), useMarkdown, pinned)
     }
 }
